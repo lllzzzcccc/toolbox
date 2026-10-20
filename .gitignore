@@ -1,0 +1,9 @@
+# macOS
+.DS_Store
+
+# SwiftPM 构建产物
+.build/
+
+# App 打包产物（用 Scripts/make_app.sh 生成）
+Toolbox.app/
+*.app
