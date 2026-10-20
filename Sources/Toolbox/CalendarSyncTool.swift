@@ -16,15 +16,16 @@ final class CalendarSyncTool: Tool {
 
     override init(id: String = "calendarsync", name: String = "日历同步",
                   icon: String = "arrow.triangle.2.circlepath",
+                  tint: Color = .orange,
                   defaultEnabled: Bool = true) {
-        super.init(id: id, name: name, icon: icon, defaultEnabled: defaultEnabled)
+        super.init(id: id, name: name, icon: icon, tint: tint, defaultEnabled: defaultEnabled)
         sync_cal_init()
         if isEnabled { start() }
     }
 
     func start() {
         guard timer == nil else { return }
-        timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
+        timer = Timer.scheduledTimer(withTimeInterval: pollingInterval, repeats: true) { _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.tick()
@@ -37,12 +38,18 @@ final class CalendarSyncTool: Tool {
         timer = nil
     }
 
+    override func restartPolling() {
+        guard timer != nil else { return }
+        stop()
+        start()
+    }
+
     override func setEnabled(_ value: Bool) {
         super.setEnabled(value)
         value ? start() : stop()
     }
 
-    /// 每 2 秒检查一次 DB 修改时间；变更后去抖 3 秒再同步。
+    /// 按 pollingInterval 检查 DB 修改时间；变更后去抖 3 秒再同步。
     private func tick() {
         let attrs = try? FileManager.default.attributesOfItem(atPath: dbPath)
         guard let mtime = attrs?[.modificationDate] as? Date else { return }
@@ -84,14 +91,42 @@ struct CalendarSyncView: View {
     let tool: CalendarSyncTool
 
     var body: some View {
-        Form {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("日历同步")
+                .font(.system(size: 25, weight: .bold))
+                .padding(.horizontal, 20)
+                .padding(.top, 16)
+                .padding(.bottom, 12)
+
+            Form {
             Section("状态") {
-                LabeledContent("自动同步") {
+                Toggle(isOn: Binding(
+                    get: { tool.isEnabled },
+                    set: { tool.setEnabled($0) }
+                )) {
+                    Text("自动同步")
+                }
+                .toggleStyle(.switch)
+
+                Picker("检测间隔", selection: Binding(
+                    get: { tool.pollingInterval },
+                    set: { tool.setPollingInterval($0) }
+                )) {
+                    Text("1 秒").tag(1.0)
+                    Text("2 秒").tag(2.0)
+                    Text("5 秒").tag(5.0)
+                    Text("10 秒").tag(10.0)
+                    Text("30 秒").tag(30.0)
+                    Text("60 秒").tag(60.0)
+                }
+                .pickerStyle(.menu)
+
+                LabeledContent("运行状态") {
                     HStack(spacing: 6) {
                         Circle()
                             .fill(tool.isEnabled ? Color.green : Color.secondary)
                             .frame(width: 8, height: 8)
-                        Text(tool.isEnabled ? "运行中（每 2 秒检测变更）" : "已停止")
+                        Text(tool.isEnabled ? "运行中（每 \(Int(tool.pollingInterval)) 秒检测变更）" : "已停止")
                     }
                 }
                 if let last = tool.lastSyncAt {
@@ -126,6 +161,6 @@ struct CalendarSyncView: View {
             }
         }
         .formStyle(.grouped)
-        .navigationTitle("日历同步")
+        }
     }
 }

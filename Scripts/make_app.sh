@@ -12,8 +12,15 @@ APP="$APP_NAME.app"
 BIN=".build/release/$APP_NAME"
 
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/$APP_NAME"
+
+# 应用图标（由 Scripts/generate_icon.swift 生成，提交在 Assets/）
+if [ -f "Assets/AppIcon.icns" ]; then
+    cp "Assets/AppIcon.icns" "$APP/Contents/Resources/"
+else
+    echo "警告：缺少 Assets/AppIcon.icns，生成的 App 将没有图标" >&2
+fi
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -25,6 +32,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleVersion</key><string>1.0</string>
     <key>CFBundleShortVersionString</key><string>1.0</string>
     <key>CFBundleExecutable</key><string>$APP_NAME</string>
+    <key>CFBundleIconFile</key><string>AppIcon</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>

@@ -10,39 +10,44 @@ struct SettingsView: View {
     @State private var errorMsg: String?
 
     var body: some View {
-        Form {
-            Section {
-                if SettingsView.supportsLoginItem {
-                    Toggle(isOn: Binding(
-                        get: { isEnabled },
-                        set: { setLaunchAtLogin($0) }
-                    )) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("开机自启")
-                            Text("登录 macOS 时自动启动 Toolbox")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .toggleStyle(.switch)
-                }
-            } header: {
-                Text("通用")
-            } footer: {
-                if !SettingsView.supportsLoginItem {
-                    Text("当前以未打包方式运行，开机自启不可用")
-                }
-            }
+        VStack(alignment: .leading, spacing: 0) {
+            Text("通用")
+                .font(.system(size: 25, weight: .bold))
+                .padding(.horizontal, 20)
+                .padding(.top, 16)
+                .padding(.bottom, 12)
 
-            if let errorMsg {
+            Form {
                 Section {
-                    Text(errorMsg)
-                        .foregroundStyle(.red)
+                    if SettingsView.supportsLoginItem {
+                        Toggle(isOn: Binding(
+                            get: { isEnabled },
+                            set: { setLaunchAtLogin($0) }
+                        )) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("开机自启")
+                                Text("登录 macOS 时自动启动 Toolbox")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .toggleStyle(.switch)
+                    }
+                } footer: {
+                    if !SettingsView.supportsLoginItem {
+                        Text("当前以未打包方式运行，开机自启不可用")
+                    }
+                }
+
+                if let errorMsg {
+                    Section {
+                        Text(errorMsg)
+                            .foregroundStyle(.red)
+                    }
                 }
             }
+            .formStyle(.grouped)
         }
-        .formStyle(.grouped)
-        .navigationTitle("设置")
     }
 
     private func setLaunchAtLogin(_ on: Bool) {
