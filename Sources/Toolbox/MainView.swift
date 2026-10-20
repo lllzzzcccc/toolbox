@@ -2,6 +2,7 @@ import SwiftUI
 
 /// 平台主界面：左侧通顶侧边栏（仿 macOS 系统设置样式，固定展开）+ 右侧选中项内容。
 /// 无窗口顶栏；详情页自带大号标题。
+@MainActor
 struct MainView: View {
     @Environment(ToolRegistry.self) private var registry
     @State private var selectedID: String?

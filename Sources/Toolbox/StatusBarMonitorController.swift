@@ -31,8 +31,11 @@ final class StatusBarMonitorController: NSObject {
             item.menu = menu
         }
         tick()
-        Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.tick() }
+        Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.tick()
+            }
         }
     }
 
@@ -123,6 +126,7 @@ extension StatusBarMonitorController: NSMenuDelegate {
 
 /// 菜单栏监控项标签：上行小字标识（CPU/RAM/SSD），下行大字号百分比。
 /// 整块 22pt 高、贴合内容宽 → 垂直居中 + 左对齐。
+@MainActor
 private struct MenuBarMonitorLabel: View {
     let tool: MonitorTool
 

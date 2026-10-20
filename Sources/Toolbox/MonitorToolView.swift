@@ -1,6 +1,7 @@
 import SwiftUI
 
 /// 单个监控项（CPU / 内存 / 磁盘）的主页面：大标题 + 启停开关 + 实时负载。
+@MainActor
 struct MonitorToolView: View {
     let tool: MonitorTool
 

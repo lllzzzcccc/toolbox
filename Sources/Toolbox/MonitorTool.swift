@@ -29,8 +29,11 @@ final class MonitorTool: Tool {
     func start() {
         guard timer == nil else { return }
         sample()
-        timer = Timer.scheduledTimer(withTimeInterval: pollingInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.sample() }
+        timer = Timer.scheduledTimer(withTimeInterval: pollingInterval, repeats: true) { _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.sample()
+            }
         }
     }
 

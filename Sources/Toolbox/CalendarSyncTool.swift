@@ -87,6 +87,7 @@ final class CalendarSyncTool: Tool {
     }
 }
 
+@MainActor
 struct CalendarSyncView: View {
     let tool: CalendarSyncTool
 
