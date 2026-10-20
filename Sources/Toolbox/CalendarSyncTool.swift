@@ -24,7 +24,10 @@ final class CalendarSyncTool: Tool {
     func start() {
         guard timer == nil else { return }
         timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.tick() }
+            Task { @MainActor in
+                guard let self else { return }
+                self.tick()
+            }
         }
     }
 
@@ -63,7 +66,10 @@ final class CalendarSyncTool: Tool {
         syncing = true
         DispatchQueue.global(qos: .utility).async { [weak self] in
             sync_cal_do_sync()
-            Task { @MainActor in self?.syncing = false }
+            Task { @MainActor in
+                guard let self else { return }
+                self.syncing = false
+            }
         }
     }
 

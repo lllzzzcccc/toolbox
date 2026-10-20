@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 
 @main
+@MainActor
 struct ToolboxApp: App {
     @State private var registry = ToolRegistry(tools: [
         SystemMonitorTool(),

@@ -25,7 +25,10 @@ final class SystemMonitorTool: Tool {
         guard timer == nil else { return }
         sample()
         timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.sample() }
+            Task { @MainActor in
+                guard let self else { return }
+                self.sample()
+            }
         }
     }
 
