@@ -19,6 +19,7 @@ struct MainView: View {
                             ))
                             .labelsHidden()
                             .toggleStyle(.switch)
+                            .controlSize(.small)
                         }
                         .tag(tool.id)
                     }
@@ -45,5 +46,10 @@ struct MainView: View {
             }
         }
         .frame(minWidth: 560, minHeight: 360)
+        .onAppear {
+            if selectedID == nil {
+                selectedID = registry.tools.first?.id
+            }
+        }
     }
 }

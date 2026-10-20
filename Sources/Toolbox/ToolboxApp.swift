@@ -15,6 +15,7 @@ struct ToolboxApp: App {
             MainView()
                 .environment(registry)
         }
+        .defaultSize(width: 780, height: 500)
 
         // 菜单栏项：系统监控开启时显示 CPU/内存摘要，否则显示图标
         MenuBarExtra {
@@ -24,6 +25,7 @@ struct ToolboxApp: App {
             if let monitor = registry.tools.first(where: { $0 is SystemMonitorTool }) as? SystemMonitorTool,
                monitor.isEnabled {
                 Text(monitor.statusText)
+                    .monospacedDigit()
             } else {
                 Image(systemName: "wrench.and.screwdriver")
             }

@@ -5,18 +5,27 @@ struct MonitorToolView: View {
     let monitor: SystemMonitorTool
 
     var body: some View {
-        @Bindable var monitor = monitor
-        VStack(alignment: .leading, spacing: 24) {
-            Text("系统监控")
-                .font(.title2.bold())
-
-            GaugeRow(title: "CPU", icon: "cpu", value: monitor.cpuPercent, color: .blue)
-            GaugeRow(title: "内存", icon: "memorychip", value: monitor.memPercent, color: .green)
-
-            Spacer()
+        Form {
+            Section {
+                VStack(spacing: 16) {
+                    GaugeRow(title: "CPU", icon: "cpu", value: monitor.cpuPercent)
+                    GaugeRow(title: "内存", icon: "memorychip", value: monitor.memPercent)
+                }
+                .padding(.vertical, 4)
+            } header: {
+                HStack {
+                    Text("实时负载")
+                    Spacer()
+                    if let updated = monitor.lastSampledAt {
+                        Text("更新于 \(updated, style: .time)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
         }
-        .padding(24)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .formStyle(.grouped)
+        .navigationTitle("系统监控")
     }
 }
 
@@ -24,7 +33,15 @@ struct GaugeRow: View {
     let title: String
     let icon: String
     let value: Double
-    let color: Color
+
+    /// 负载着色：绿 → 黄 → 红。
+    private var tint: Color {
+        switch value {
+        case ..<60: .green
+        case ..<85: .yellow
+        default: .red
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -36,8 +53,9 @@ struct GaugeRow: View {
                     .font(.title3.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
-            ProgressView(value: value, total: 100)
-                .tint(color)
+            ProgressView(value: min(max(value, 0), 100), total: 100)
+                .tint(tint)
         }
+        .accessibilityElement(children: .combine)
     }
 }

@@ -6,7 +6,8 @@ import CSyncCal
 @MainActor
 final class CalendarSyncTool: Tool {
     private var timer: Timer?
-    private var syncing = false
+    private(set) var isSyncing = false
+    private(set) var lastSyncAt: Date?
     private var lastMtime: Date?
     private var pendingSince: Date?
 
@@ -23,8 +24,8 @@ final class CalendarSyncTool: Tool {
 
     func start() {
         guard timer == nil else { return }
-        timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
+        timer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
+            Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.tick()
             }
@@ -62,13 +63,14 @@ final class CalendarSyncTool: Tool {
 
     /// 立即执行一次同步（后台线程，带防重入）。
     func syncNow() {
-        guard !syncing else { return }
-        syncing = true
-        DispatchQueue.global(qos: .utility).async { [weak self] in
+        guard !isSyncing else { return }
+        isSyncing = true
+        DispatchQueue.global(qos: .utility).async {
             sync_cal_do_sync()
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 guard let self else { return }
-                self.syncing = false
+                self.isSyncing = false
+                self.lastSyncAt = Date()
             }
         }
     }
@@ -82,23 +84,48 @@ struct CalendarSyncView: View {
     let tool: CalendarSyncTool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("日历同步")
-                .font(.title2.bold())
-
-            Text("开启后，自动把「日历清单」（CalendarTask）里的改动上传到服务器。\n下载方向由 App 自身处理，这里只负责「本地一改 → 自动推送」。")
-                .foregroundStyle(.secondary)
-                .lineSpacing(3)
-
-            Button {
-                tool.syncNow()
-            } label: {
-                Label("立即同步一次", systemImage: "arrow.triangle.2.circlepath")
+        Form {
+            Section("状态") {
+                LabeledContent("自动同步") {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(tool.isEnabled ? Color.green : Color.secondary)
+                            .frame(width: 8, height: 8)
+                        Text(tool.isEnabled ? "运行中（每 2 秒检测变更）" : "已停止")
+                    }
+                }
+                if let last = tool.lastSyncAt {
+                    LabeledContent("上次同步") {
+                        Text(last.formatted(date: .omitted, time: .standard))
+                    }
+                }
             }
 
-            Spacer()
+            Section("说明") {
+                Text("开启后，自动把「日历清单」（CalendarTask）里的改动上传到服务器。\n下载方向由 App 自身处理，这里只负责「本地一改 → 自动推送」。")
+                    .foregroundStyle(.secondary)
+                    .lineSpacing(3)
+                    .padding(.vertical, 2)
+            }
+
+            Section {
+                Button {
+                    tool.syncNow()
+                } label: {
+                    if tool.isSyncing {
+                        HStack(spacing: 6) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("同步中…")
+                        }
+                    } else {
+                        Label("立即同步一次", systemImage: "arrow.triangle.2.circlepath")
+                    }
+                }
+                .disabled(tool.isSyncing)
+            }
         }
-        .padding(24)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .formStyle(.grouped)
+        .navigationTitle("日历同步")
     }
 }

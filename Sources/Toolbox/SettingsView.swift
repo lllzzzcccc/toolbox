@@ -10,39 +10,39 @@ struct SettingsView: View {
     @State private var errorMsg: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("设置")
-                .font(.title2.bold())
-
-            if SettingsView.supportsLoginItem {
-                Toggle(isOn: Binding(
-                    get: { isEnabled },
-                    set: { setLaunchAtLogin($0) }
-                )) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("开机自启")
-                        Text("登录 macOS 时自动启动 Toolbox")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+        Form {
+            Section {
+                if SettingsView.supportsLoginItem {
+                    Toggle(isOn: Binding(
+                        get: { isEnabled },
+                        set: { setLaunchAtLogin($0) }
+                    )) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("开机自启")
+                            Text("登录 macOS 时自动启动 Toolbox")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
+                    .toggleStyle(.switch)
                 }
-                .toggleStyle(.switch)
-            } else {
-                Text("当前以未打包方式运行，开机自启不可用")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+            } header: {
+                Text("通用")
+            } footer: {
+                if !SettingsView.supportsLoginItem {
+                    Text("当前以未打包方式运行，开机自启不可用")
+                }
             }
 
             if let errorMsg {
-                Text(errorMsg)
-                    .font(.caption)
-                    .foregroundStyle(.red)
+                Section {
+                    Text(errorMsg)
+                        .foregroundStyle(.red)
+                }
             }
-
-            Spacer()
         }
-        .padding(24)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .formStyle(.grouped)
+        .navigationTitle("设置")
     }
 
     private func setLaunchAtLogin(_ on: Bool) {
