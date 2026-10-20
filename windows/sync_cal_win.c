@@ -95,7 +95,12 @@ static void sb_init(strbuf *b) {
 static void sb_free(strbuf *b) { free(b->data); b->data = NULL; }
 static void sb_append(strbuf *b, const char *s) {
     size_t l = strlen(s);
-    while (b->len + l + 1 > b->cap) { b->cap *= 2; b->data = realloc(b->data, b->cap); }
+    while (b->len + l + 1 > b->cap) {
+        b->cap *= 2;
+        char *p = realloc(b->data, b->cap);
+        if (!p) return;  /* OOM：放弃本次追加，避免空指针崩溃 */
+        b->data = p;
+    }
     memcpy(b->data + b->len, s, l + 1);
     b->len += l;
 }
@@ -125,6 +130,22 @@ static char *url_encode(const char *src) {
 static void sha256_hex(const unsigned char *data, size_t len, char out[65]) {
     unsigned char d[SHA256_DIGEST_LENGTH];
     SHA256(data, len, d);
+    for (int i = 0; i < SHA256_DIGEST_LENGTH; i++)
+        sprintf(out + 2 * i, "%02x", d[i]);
+    out[64] = '\0';
+}
+
+/* 流式哈希三个字段（\1 分隔），避免固定缓冲区截断导致长内容漏同步 */
+static void hash3_hex(const char *a, const char *b, const char *c, char out[65]) {
+    SHA256_CTX ctx;
+    SHA256_Init(&ctx);
+    SHA256_Update(&ctx, a, strlen(a));
+    SHA256_Update(&ctx, "\1", 1);
+    SHA256_Update(&ctx, b, strlen(b));
+    SHA256_Update(&ctx, "\1", 1);
+    SHA256_Update(&ctx, c, strlen(c));
+    unsigned char d[SHA256_DIGEST_LENGTH];
+    SHA256_Final(d, &ctx);
     for (int i = 0; i < SHA256_DIGEST_LENGTH; i++)
         sprintf(out + 2 * i, "%02x", d[i]);
     out[64] = '\0';
@@ -180,7 +201,9 @@ static const char *state_get(state_t *s, const char *uid) {
 static void state_put(state_t *s, const char *uid, const char *hash) {
     if (s->n >= s->cap) {
         s->cap = s->cap ? s->cap * 2 : 256;
-        s->ents = realloc(s->ents, s->cap * sizeof(state_ent));
+        state_ent *p = realloc(s->ents, s->cap * sizeof(state_ent));
+        if (!p) return;  /* OOM */
+        s->ents = p;
     }
     s->ents[s->n].uid = strdup(uid);
     snprintf(s->ents[s->n].hash, sizeof(s->ents[s->n].hash), "%s", hash);
@@ -223,7 +246,12 @@ static int state_save(state_t *s, const char *path) {
 typedef struct { char *data; size_t len; size_t cap; } resp_buf;
 
 static void rb_append(resp_buf *b, const char *p, size_t n) {
-    while (b->len + n + 1 > b->cap) { b->cap = b->cap ? b->cap * 2 : 4096; b->data = realloc(b->data, b->cap); }
+    while (b->len + n + 1 > b->cap) {
+        b->cap = b->cap ? b->cap * 2 : 4096;
+        char *q = realloc(b->data, b->cap);
+        if (!q) return;  /* OOM：放弃本次追加 */
+        b->data = q;
+    }
     memcpy(b->data + b->len, p, n);
     b->len += n;
     b->data[b->len] = '\0';
@@ -251,14 +279,15 @@ static int http_post(const char *path, const char *body, const char *cookie, cha
     free(path_w);
     if (!hReq) { WinHttpCloseHandle(hConnect); WinHttpCloseHandle(hSession); return -1; }
 
-    /* 组装请求头（UTF-8 → wide）。cookie 本身是 ASCII。 */
+    /* 组装请求头（UTF-8 → wide）。cookie 本身是 ASCII。
+     * 用 _snwprintf_s（签名固定，不依赖 __USE_MINGW_ANSI_STDIO），超长时截断而非崩溃。 */
     wchar_t *cookie_w = utf8_to_wide(cookie);
     wchar_t headers[16384];
-    swprintf(headers, sizeof(headers) / sizeof(wchar_t),
-             L"Content-Type: application/x-www-form-urlencoded; charset=utf-8\r\n"
-             L"Cookie: %ls\r\n"
-             L"Accept: application/json\r\n",
-             cookie_w);
+    _snwprintf_s(headers, sizeof(headers) / sizeof(wchar_t), _TRUNCATE,
+                 L"Content-Type: application/x-www-form-urlencoded; charset=utf-8\r\n"
+                 L"Cookie: %ls\r\n"
+                 L"Accept: application/json\r\n",
+                 cookie_w);
     free(cookie_w);
 
     WinHttpAddRequestHeaders(hReq, headers, -1L, WINHTTP_ADDREQ_FLAG_ADD);
@@ -309,9 +338,10 @@ static int result_ok(const char *json) {
 
 /* ---------------- 同步 ---------------- */
 static void do_sync(int dry_run) {
-    sqlite3 *db;
+    sqlite3 *db = NULL;
     if (sqlite3_open(g_db_path, &db) != SQLITE_OK) {
-        log_msg("打开 DB 失败: %s", sqlite3_errmsg(db));
+        log_msg("打开 DB 失败: %s", db ? sqlite3_errmsg(db) : "unknown");
+        if (db) sqlite3_close(db);
         return;
     }
     sqlite3_busy_timeout(db, 15000);
@@ -340,13 +370,10 @@ static void do_sync(int dry_run) {
             const unsigned char *bg = sqlite3_column_text(st, 2);
             const unsigned char *app = sqlite3_column_text(st, 3);
             if (!uid) continue;
-            char buf[16384];
-            snprintf(buf, sizeof(buf), "%s\1%s\1%s",
-                     content ? (char *)content : "",
-                     bg ? (char *)bg : "",
-                     app ? (char *)app : "");
             char h[65];
-            sha256_hex((unsigned char *)buf, strlen(buf), h);
+            hash3_hex(content ? (char *)content : "",
+                      bg ? (char *)bg : "",
+                      app ? (char *)app : "", h);
             state_put(&cur, (const char *)uid, h);
         }
         sqlite3_finalize(st);
@@ -520,9 +547,10 @@ static void do_sync(int dry_run) {
 /* ---------------- 探测（只读，无副作用） ----------------
  * POST /api/sync/server/info，验证 HTTPS/WinHTTP/cookie/client=pc 链路是否通。 */
 static void do_probe(void) {
-    sqlite3 *db;
+    sqlite3 *db = NULL;
     if (sqlite3_open(g_db_path, &db) != SQLITE_OK) {
-        log_msg("打开 DB 失败: %s", sqlite3_errmsg(db));
+        log_msg("打开 DB 失败: %s", db ? sqlite3_errmsg(db) : "unknown");
+        if (db) sqlite3_close(db);
         return;
     }
     sqlite3_busy_timeout(db, 15000);
@@ -543,6 +571,8 @@ static void do_probe(void) {
 
 /* ---------------- 监控 ---------------- */
 static void watch(int interval, int debounce) {
+    if (interval < 1) interval = 1;   /* 防止 Sleep(0) 退化热循环 */
+    if (debounce < 0) debounce = 0;
     log_msg("开始监控 %s（间隔 %ds，去抖 %ds）", g_db_path, interval, debounce);
 
     /* 启动先做一次同步：首次运行建立基线（全量上传），之后才走增量。

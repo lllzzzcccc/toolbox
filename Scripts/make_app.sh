@@ -34,3 +34,10 @@ PLIST
 
 codesign --force --deep -s - "$APP"
 echo "已生成 $APP"
+
+# 安装到 /Applications：先退出旧实例、覆盖、再启动
+pkill -f "$APP_NAME.app/Contents/MacOS/$APP_NAME" 2>/dev/null || true
+rm -rf "/Applications/$APP"
+cp -R "$APP" /Applications/
+open "/Applications/$APP"
+echo "已安装并启动 /Applications/$APP"

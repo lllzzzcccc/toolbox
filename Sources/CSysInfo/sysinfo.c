@@ -5,11 +5,20 @@
 #include <unistd.h>
 #include <stdint.h>
 
+/* mach_host_self() 每次返回一个新的端口 send right（+1 引用），
+ * 采样循环里反复调用会无界累积。这里缓存一次，进程生命周期内复用。 */
+static mach_port_t host_port(void) {
+    static mach_port_t host = MACH_PORT_NULL;
+    if (host == MACH_PORT_NULL)
+        host = mach_host_self();
+    return host;
+}
+
 double sysinfo_cpu_usage(void) {
     static uint64_t prev_total = 0, prev_used = 0;
     host_cpu_load_info_data_t cpu;
     mach_msg_type_number_t count = HOST_CPU_LOAD_INFO_COUNT;
-    if (host_statistics(mach_host_self(), HOST_CPU_LOAD_INFO,
+    if (host_statistics(host_port(), HOST_CPU_LOAD_INFO,
                         (host_info_t)&cpu, &count) != KERN_SUCCESS)
         return 0.0;
 
@@ -32,7 +41,7 @@ double sysinfo_cpu_usage(void) {
 double sysinfo_mem_usage(void) {
     vm_statistics64_data_t vm;
     mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
-    if (host_statistics64(mach_host_self(), HOST_VM_INFO64,
+    if (host_statistics64(host_port(), HOST_VM_INFO64,
                           (host_info64_t)&vm, &count) != KERN_SUCCESS)
         return 0.0;
 

@@ -77,7 +77,12 @@ static void sb_init(strbuf *b) {
 static void sb_free(strbuf *b) { free(b->data); b->data = NULL; }
 static void sb_append(strbuf *b, const char *s) {
     size_t l = strlen(s);
-    while (b->len + l + 1 > b->cap) { b->cap *= 2; b->data = realloc(b->data, b->cap); }
+    while (b->len + l + 1 > b->cap) {
+        b->cap *= 2;
+        char *p = realloc(b->data, b->cap);
+        if (!p) return;  /* OOM：放弃本次追加，避免空指针崩溃 */
+        b->data = p;
+    }
     memcpy(b->data + b->len, s, l + 1);
     b->len += l;
 }
@@ -106,6 +111,22 @@ static char *url_encode(const char *src) {
 static void sha256_hex(const unsigned char *data, size_t len, char out[65]) {
     unsigned char d[CC_SHA256_DIGEST_LENGTH];
     CC_SHA256(data, (CC_LONG)len, d);
+    for (int i = 0; i < CC_SHA256_DIGEST_LENGTH; i++)
+        sprintf(out + 2 * i, "%02x", d[i]);
+    out[64] = '\0';
+}
+
+/* 流式哈希三个字段（\1 分隔），避免固定缓冲区截断导致长内容漏同步 */
+static void hash3_hex(const char *a, const char *b, const char *c, char out[65]) {
+    CC_SHA256_CTX ctx;
+    CC_SHA256_Init(&ctx);
+    CC_SHA256_Update(&ctx, a, (CC_LONG)strlen(a));
+    CC_SHA256_Update(&ctx, "\1", 1);
+    CC_SHA256_Update(&ctx, b, (CC_LONG)strlen(b));
+    CC_SHA256_Update(&ctx, "\1", 1);
+    CC_SHA256_Update(&ctx, c, (CC_LONG)strlen(c));
+    unsigned char d[CC_SHA256_DIGEST_LENGTH];
+    CC_SHA256_Final(d, &ctx);
     for (int i = 0; i < CC_SHA256_DIGEST_LENGTH; i++)
         sprintf(out + 2 * i, "%02x", d[i]);
     out[64] = '\0';
@@ -161,7 +182,9 @@ static const char *state_get(state_t *s, const char *uid) {
 static void state_put(state_t *s, const char *uid, const char *hash) {
     if (s->n >= s->cap) {
         s->cap = s->cap ? s->cap * 2 : 256;
-        s->ents = realloc(s->ents, s->cap * sizeof(state_ent));
+        state_ent *p = realloc(s->ents, s->cap * sizeof(state_ent));
+        if (!p) return;  /* OOM */
+        s->ents = p;
     }
     s->ents[s->n].uid = strdup(uid);
     snprintf(s->ents[s->n].hash, sizeof(s->ents[s->n].hash), "%s", hash);
@@ -206,7 +229,9 @@ typedef struct { char *data; size_t len; } resp_buf;
 static size_t write_cb(void *ptr, size_t sz, size_t nmemb, void *ud) {
     resp_buf *b = (resp_buf *)ud;
     size_t add = sz * nmemb;
-    b->data = realloc(b->data, b->len + add + 1);
+    char *p = realloc(b->data, b->len + add + 1);
+    if (!p) return 0;  /* OOM：返回 0 让 curl 报 CURLE_WRITE_ERROR */
+    b->data = p;
     memcpy(b->data + b->len, ptr, add);
     b->len += add;
     b->data[b->len] = '\0';
@@ -221,6 +246,11 @@ static int http_post(const char *path, const char *body, const char *cookie, cha
     snprintf(url, sizeof(url), "%s/%s", BASE, path);
 
     char cookie_hdr[8192];
+    if (strlen(cookie) >= sizeof(cookie_hdr) - 8) {
+        log_msg("cookie 过长，跳过上传");
+        curl_easy_cleanup(c);
+        return -1;
+    }
     snprintf(cookie_hdr, sizeof(cookie_hdr), "Cookie: %s", cookie);
 
     struct curl_slist *hdrs = NULL;
@@ -272,9 +302,10 @@ static int result_ok(const char *json) {
 
 /* ---------------- 同步 ---------------- */
 static void do_sync(int dry_run) {
-    sqlite3 *db;
+    sqlite3 *db = NULL;
     if (sqlite3_open(g_db_path, &db) != SQLITE_OK) {
-        log_msg("打开 DB 失败: %s", sqlite3_errmsg(db));
+        log_msg("打开 DB 失败: %s", db ? sqlite3_errmsg(db) : "unknown");
+        if (db) sqlite3_close(db);
         return;
     }
     sqlite3_busy_timeout(db, 15000);
@@ -303,13 +334,10 @@ static void do_sync(int dry_run) {
             const unsigned char *bg = sqlite3_column_text(st, 2);
             const unsigned char *app = sqlite3_column_text(st, 3);
             if (!uid) continue;
-            char buf[16384];
-            snprintf(buf, sizeof(buf), "%s\1%s\1%s",
-                     content ? (char *)content : "",
-                     bg ? (char *)bg : "",
-                     app ? (char *)app : "");
             char h[65];
-            sha256_hex((unsigned char *)buf, strlen(buf), h);
+            hash3_hex(content ? (char *)content : "",
+                      bg ? (char *)bg : "",
+                      app ? (char *)app : "", h);
             state_put(&cur, (const char *)uid, h);
         }
         sqlite3_finalize(st);

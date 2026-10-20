@@ -1,0 +1,65 @@
+name: Build and Release
+
+# 每次推送到 main（或手动触发）时，编译、打包成 .app + DMG，并发布到 GitHub Release
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14   # arm64（Apple Silicon），与本机架构一致
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build (release)
+        run: swift build -c release
+
+      - name: Package Toolbox.app
+        run: |
+          APP="Toolbox"
+          APP_DIR="$APP.app"
+          rm -rf "$APP_DIR"
+          mkdir -p "$APP_DIR/Contents/MacOS"
+          cp ".build/release/$APP" "$APP_DIR/Contents/MacOS/$APP"
+          cat > "$APP_DIR/Contents/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleName</key><string>Toolbox</string>
+              <key>CFBundleIdentifier</key><string>com.toolbox.app</string>
+              <key>CFBundleVersion</key><string>1.0</string>
+              <key>CFBundleShortVersionString</key><string>1.0</string>
+              <key>CFBundleExecutable</key><string>Toolbox</string>
+              <key>CFBundlePackageType</key><string>APPL</string>
+              <key>LSUIElement</key><true/>
+              <key>NSHighResolutionCapable</key><true/>
+          </dict>
+          </plist>
+          PLIST
+          codesign --force --deep -s - "$APP_DIR"
+          echo "打包完成：$APP_DIR"
+
+      - name: Create DMG
+        run: |
+          APP="Toolbox"
+          STAGING="dmg_staging"
+          rm -rf "$STAGING" "$APP.dmg"
+          mkdir -p "$STAGING"
+          cp -R "$APP.app" "$STAGING/"
+          ln -s /Applications "$STAGING/Applications"
+          hdiutil create -volname "$APP" -srcfolder "$STAGING" -ov -format UDZO "$APP.dmg"
+          echo "DMG 生成：$APP.dmg"
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.run_number }}
+          name: Toolbox v${{ github.run_number }}
+          files: Toolbox.dmg
